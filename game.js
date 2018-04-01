@@ -122,7 +122,7 @@ phina.define("MainScene", {
 	},
 	update: function(app) {
 		if(!this.endFlag)
-			this.updatePlayerPos(app.pointer);
+			this.updatePlayerPos(app.pointer, app.deltaTime * 2);
 
 		if(!this.endFlag)
 			this.enemyHitsPollen();
@@ -451,8 +451,12 @@ phina.define("MainScene", {
 		}.bind(this));
 		return result;
 	},
-	updatePlayerPos: function(cursor) {
-		this.player.setPosition(cursor.x, cursor.y);
+	updatePlayerPos: function(cursor, dt) {
+		this.player.tweener.clear()
+		.to({
+			x: cursor.x,
+			y: cursor.y,
+		},dt);
 	},
 	defeat: function(spriteName, elm) {
 		if(elm.type != undefined)
@@ -498,9 +502,6 @@ phina.define("MainScene", {
 				.setPosition(this.lifeGroup.children.last.x,
 					this.lifeGroup.children.last.y + this.lifeGroup.children.last.height);
 		}
-	},
-	onclick:function(){
-		this.player.pollenUp();
 	},
 });
 phina.define("Item", {
