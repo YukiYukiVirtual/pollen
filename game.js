@@ -1,4 +1,6 @@
+(function(){
 phina.globalize();
+
 var WIDTH = 1280;
 var HEIGHT = WIDTH * 9 / 16;
 
@@ -19,9 +21,8 @@ var ASSETS = {
 		"ammo-2": "image/honoo_hi_fire.png",
 		"ammo-3": "image/ono.png",
 		"item0": "image/kona2_red.png",
-		"item1": "image/kona4_blue.png",
-		"item2": "image/kona6_green.png",
-		"item3": "image/kona3_yellow.png",
+		"item1": "image/kona6_green.png",
+		"item2": "image/kona3_yellow.png",
 		"life": "image/tree_hinoki.png",
 		"bg": "image/bg_natural_mori.jpg",
 		"resultbg": "image/kafun_tachimuka_woman_kageki.png",
@@ -94,10 +95,13 @@ phina.define("MainScene", {
 
 		this.enemyGroup = DisplayElement().addChildTo(this);
 		this.enemyFreq = 50;
-		this.bossFighting = false;
+		this.enemyFreqLimit = 20;
+		
+		this.bossFighting = 0;
 
 		this.player = Player()
 			.setSize(SIZE, SIZE)
+			.setPosition(this.gridX.span(8), this.gridY.span(8))
 			.addChildTo(this);
 
 		var labelCenter = 8
@@ -117,7 +121,6 @@ phina.define("MainScene", {
 			.setPosition(this.gridX.span(labelCenter), 16)
 			.addChildTo(this);
 			
-		//this.debugLabel = Label().addChildTo(this).setPosition(WIDTH/2,HEIGHT/2);
 		this.addLife();
 	},
 	update: function(app) {
@@ -127,53 +130,25 @@ phina.define("MainScene", {
 		if(!this.endFlag)
 			this.enemyHitsPollen();
 
-		this.updateEnemy();
+		this.enemyUpdate();
 
 		this.pollenGroup.children.each(function(pollen) {
-			if (pollen.x - pollen.redius > this.gridX.width) {
+			if (pollen.x - pollen.radius > this.gridX.width) {
 				pollen.remove();
 			}
 		}.bind(this));
 		this.itemGroup.children.each(function(item) {
-			if (item.x + item.redius < 0) {
+			if (item.x + item.radius < 0) {
 				item.remove();
 			}
 		}.bind(this));
 
 		// 花粉
 		if(!this.endFlag)
-		{
-			var freq = this.pollenFreq;
-			var times = 1;
-			if(this.player.pollen == 2)
-				freq /= 2;
-			if(this.player.pollen == 3)
-				times = 3;
-			if(this.player.pollen == 4)
-			{
-				freq /= 1.2;
-				times = 3;
-			}
-			freq = parseInt(freq);
-			if (this.player.frame % freq == 0) {
-				var rads = [
-					Math.degToRad(0),
-					Math.degToRad(10),
-					Math.degToRad(-10),
-				];
-				for(var i = 0; i < times; i++)
-				{
-					var pollen = Pollen(this.player.power, this.player.size)
-						.setPosition(this.player.x, this.player.y)
-						.addChildTo(this.pollenGroup);
-					pollen.physical.velocity.fromAngle(rads[i], 20);
-				}
-				SoundManager.play("pollen");
-			}
-		}
+			this.shotPollen();
 
 		// 雑魚
-		if (this.player.frame % (this.enemyFreq + (this.bossCount? 90:0)) == 0) {
+		if (this.player.frame % (this.enemyFreq + (this.bossFighting > 0? 90:0)) == 0) {
 			this.summonEnemy();
 		}
 
@@ -192,7 +167,7 @@ phina.define("MainScene", {
 			{
 				this.endFlag = true;
 				this.defeat("player", this.player)
-					.call(function(){
+					.tweener.call(function(){
 						this.exit({
 							score: this.score,
 						});
@@ -204,6 +179,33 @@ phina.define("MainScene", {
 			{
 				SoundManager.play("damage");
 			}
+		}
+	},
+	shotPollen: function() {
+		var freq = this.pollenFreq;
+		var times = 1;
+		if(this.player.pollen == 2)
+			freq /= 2;
+		if(this.player.pollen == 3)
+		{
+			times = 3;
+			freq *= 1.5;
+		}
+		freq = parseInt(freq);
+		if (this.player.frame % freq == 0) {
+			var rads = [
+				Math.degToRad(0),
+				Math.degToRad(10),
+				Math.degToRad(-10),
+			];
+			for(var i = 0; i < times; i++)
+			{
+				var pollen = Pollen(this.player.power)
+					.setPosition(this.player.x, this.player.y)
+					.addChildTo(this.pollenGroup);
+				pollen.physical.velocity.fromAngle(rads[i], 20);
+			}
+			SoundManager.play("pollen");
 		}
 	},
 	summonEnemy: function() {
@@ -268,50 +270,52 @@ phina.define("MainScene", {
 					}, speed)
 					.setLoop(true);
 			}.bind(this));
-		this.bossFighting = true;
+		this.bossFighting++;
 		SoundManager.play("summon" + type);
 	},
 	summonItem: function(x, y) {
 		var size = SIZE / 2;
-		var type = Random.randint(0, 3);
+		var type = Random.randint(0, 2);
 		var item = Item(type)
 			.setPosition(x, y)
 			.setSize(size, size)
 			.addChildTo(this.itemGroup);
 		item.physical.velocity.set(-4, 0);
 	},
+	killEnemy: function(enemy)
+	{
+		if (enemy.type < 0) {
+			
+			enemy.remove();
+			return;
+		}
+		switch(enemy.type)
+		{
+			case 2:
+			case 3:
+				this.bossFighting--;
+			break;
+		}
+		this.score += enemy.score;
+
+		if (this.score >= this.level * LEVELUP_SCORE) {
+			this.levelUp();
+		}
+		this.defeat("defeat" + enemy.type, enemy);
+		if (Random.randint(1, this.itemFreq) == 1) {
+			this.summonItem(enemy.x, enemy.y);
+		}
+		enemy.remove();
+	},
 	enemyHitsPollen: function() {
-		this.enemyGroup.children.each(function(enemy) {
-			this.pollenGroup.children.forEach(function(pollen) {
-				var enemyC = Circle(enemy.x, enemy.y, enemy.radius);
-				var pollenC = Circle(pollen.x, pollen.y, pollen.radius);
-				if (Collision.testCircleCircle(enemyC, pollenC)) {
+		this.pollenGroup.children.each(function(pollen) {
+			this.enemyGroup.children.each(function(enemy) {
+				if (Collision.testCircleCircle(enemy, pollen)) {
 					var power = pollen.power - enemy.hp;
 					enemy.hp = enemy.hp - pollen.power;
 					pollen.setPower(power);
 					if (enemy.hp <= 0) {
-						if (enemy.type < 0) {
-							
-							enemy.remove();
-							return;
-						}
-						switch(enemy.type)
-						{
-							case 2:
-							case 3:
-								this.bossFighting = false;
-							break;
-						}
-						this.score += enemy.score;
-
-						if (this.score >= this.level * LEVELUP_SCORE) {
-							this.levelUp();
-						}
-						this.defeat("defeat" + enemy.type, enemy);
-						if (Random.randint(1, this.itemFreq) == 1) {
-							this.summonItem(enemy.x, enemy.y);
-						}
-						enemy.remove();
+						this.killEnemy(enemy);
 						return;
 					}
 				}
@@ -320,9 +324,7 @@ phina.define("MainScene", {
 	},
 	hitItem: function() {
 		this.itemGroup.children.each(function(item) {
-			var itemC = Circle(item.x, item.y, item.radius);
-			var playerC = Circle(this.player.x, this.player.y, this.player.radius);
-			if (Collision.testCircleCircle(itemC, playerC)) {
+			if (Collision.testCircleCircle(item, this.player)) {
 				var suc = false;
 				switch(item.type)
 				{
@@ -330,12 +332,9 @@ phina.define("MainScene", {
 						suc = this.player.powerUp();
 					break;
 					case 1:
-						suc = this.player.sizeUp();
-					break;
-					case 2:
 						suc = this.addLife();
 					break;
-					case 3:
+					case 2:
 						suc = this.player.pollenUp();
 					break;
 				}
@@ -350,16 +349,20 @@ phina.define("MainScene", {
 	},
 	levelUp: function() {
 		this.level++;
-		this.enemyFreq = Math.max(20, this.enemyFreq - 1);
+		this.enemyFreq = Math.max(this.enemyFreqLimit, this.enemyFreq - 1);
 		this.summonBoss();
 	},
-	updateEnemy: function() {
+	enemyUpdate: function() {
 		this.enemyGroup.children.each(function(enemy) {
 			var remOffset = 50;
-			if (enemy.x + enemy.radius < -remOffset) {
+			if (enemy.x + enemy.radius < -remOffset || enemy.type < 0 && enemy.frame >= 300) {
 				enemy.remove();
+				return;
 			}
-			if (enemy.type == 0 || enemy.type == 1) {
+			switch(enemy.type)
+			{
+				case 0:
+				case 1:
 				if (enemy.frame % 60 == 1) {
 					var ammo = Enemy("ammo", -1, this.level, 0)
 						.setSize(64, 64)
@@ -373,20 +376,18 @@ phina.define("MainScene", {
 							10
 						);
 					SoundManager.play("fire");
-				}
-			}
-			if (enemy.type == 2) {
-				if (enemy.frame % 5 == 0) {
-					
+				}break;
+				case 2:
+				if(enemy.frame % 10 == 0)
+				{
 					var ammo = Enemy("ammo", -enemy.type, 1, 0)
 						.setSize(64, 64)
 						.setPosition(enemy.x, enemy.y)
 						.addChildTo(this.enemyGroup);
-					ammo.physical.velocity.set(0, 0);
+					ammo.physical.velocity.set(-8, 0);
 					SoundManager.play("fire");
-				}
-			}
-			if (enemy.type == 3) {
+				}break;
+				case 3:
 				if (enemy.frame % 43 == 0 || enemy.frame % 43 == 13) {
 					var ammo = Enemy("ammo", -enemy.type, 999, 0)
 						.setSize(64, 64)
@@ -400,52 +401,28 @@ phina.define("MainScene", {
 							10
 						);
 					SoundManager.play("axe");
-				}
-			}
-			if (enemy.type == -1) {
-				enemy.rotation -= 15;
-			}
-			if (enemy.type == -2) {
-				var k = 10.0;
-				var r = 8;
-				var rx = r * 3 / 4
-				enemy.physical.velocity.x = -Math.cos(enemy.frame / k) * r - rx;
-				enemy.physical.velocity.y = Math.sin(enemy.frame / k) * r;
-			}
-			if (enemy.type == -3) {
-				enemy.rotation -= 15;
+				}break;
+				case -1:
+				case -3:
+				{
+					enemy.rotation -= 15;
+				}break;
+				case -2:
+				{
+					var k = 10.0;
+					var r = 8;
+					var rx = r * 3 / 4
+					enemy.physical.velocity.x = -Math.cos(enemy.frame / k) * r - rx;
+					enemy.physical.velocity.y = Math.sin(enemy.frame / k) * r;
+				}break;
 			}
 		}.bind(this));
 	},
 	playerHitsEnemy: function() {
 		var result = false;
 		this.enemyGroup.children.forEach(function(enemy) {
-			var enemyC = Circle(enemy.x, enemy.y, enemy.radius);
-			var playerC = Circle(this.player.x, this.player.y, this.player.radius / 4);
-			if (Collision.testCircleCircle(enemyC, playerC)) {
-				if(enemy.type < 0)
-				{
-					enemy.remove();
-					result = true;
-					return;
-				}
-				switch(enemy.type)
-				{
-					case 2:
-					case 3:
-						this.bossFighting = false;
-					break;
-				}
-				this.score += enemy.score;
-
-				if (this.score >= this.level * LEVELUP_SCORE) {
-					this.levelUp();
-				}
-				this.defeat("defeat" + enemy.type, enemy);
-				if (Random.randint(1, this.itemFreq) == 1) {
-					this.summonItem(enemy.x, enemy.y);
-				}
-				enemy.remove();
+			if (Collision.testCircleCircle(enemy, this.player.Collider)) {
+				this.killEnemy(enemy);
 				result =  true;
 			}
 		}.bind(this));
@@ -461,18 +438,19 @@ phina.define("MainScene", {
 	defeat: function(spriteName, elm) {
 		if(elm.type != undefined)
 			SoundManager.play(spriteName);
-		return Sprite(spriteName)
+		var sprite = Sprite(spriteName)
 			.setSize(elm.radius * 2, elm.radius * 2)
 			.setScale(elm.scaleX, elm.scaleY)
 			.setPosition(elm.x, elm.y)
-			.addChildTo(this.defeatGroup)
-			.tweener.clear()
+			.addChildTo(this.defeatGroup);
+		sprite.tweener.clear()
 			.to({
 				alpha: 0,
 			})
 			.call(function() {
-				this.remove();
+				sprite.remove();
 			});
+		return sprite;
 	},
 	addLife: function() {
 		this.player.lifeUp();
@@ -518,12 +496,14 @@ phina.define("Player", {
 		this.setScale(-1, 1);
 		this.frame = 0;
 		this.power = 1;
-		this.size = 1;
 		this.pollen = 1;
 		this.life = 0;
+		this.Collider = Circle(0, 0, this.radius / 8);
 	},
 	update: function() {
 		this.frame++;
+		this.Collider.x = this.x;
+		this.Collider.y = this.y;
 	},
 	powerUp: function() {
 		if(this.power == 3)
@@ -531,14 +511,8 @@ phina.define("Player", {
 		this.power++;
 		return true;
 	},
-	sizeUp: function() {
-		if(this.size == 3)
-			return false;
-		this.size++;
-		return true;
-	},
 	pollenUp: function() {
-		if(this.pollen == 4)
+		if(this.pollen == 3)
 			return false;
 		this.pollen++;
 		return true;
@@ -552,7 +526,6 @@ phina.define("Player", {
 	lifeDown: function() {
 		this.life = Math.max(0, this.life - 1);
 		this.power = Math.max(1, this.power - 1);
-		this.size = Math.max(1, this.size - 1);
 		this.pollen = Math.max(1, this.pollen - 1);
 	},
 	isAlive: function() {
@@ -564,11 +537,16 @@ phina.define("Pollen", {
 	init: function(power, size) {
 		this.superInit({
 			stroke: "white",
+			radius: 16,
 		});
 		this.setPower(power);
-		this.setSize(size);
 	},
 	setPower: function(power) {
+		if(power <= 0)
+		{
+			this.remove();
+			return;
+		}
 		switch (power) {
 			case 1:
 				this.fill = "#ffd864";
@@ -580,26 +558,11 @@ phina.define("Pollen", {
 				this.fill = "#d64437";
 				break;
 			default:
-				this.remove();
-				return;
+				this.fill = "white";
+				this.radius = 256;
 		}
 		this.power = power;
 	},
-	setSize: function(size) {
-		switch (size) {
-			case 1:
-				this.radius = 8;
-				break;
-			case 2:
-				this.radius = 16;
-				break;
-			case 3:
-				this.radius = 32;
-				break;
-			default:
-				this.radius = 100;
-		}
-	}
 });
 phina.define("Enemy", {
 	superClass: "Sprite",
@@ -668,6 +631,7 @@ phina.define("TitleScene", {
 			.addChildTo(this);
 		label.fontSize = 20;
 
+		/*
 		Button({
 			text: "コメント",
 			width: 150,
@@ -683,7 +647,7 @@ phina.define("TitleScene", {
 				何らかの不都合に対する責任は負いません。\n\n\
 				それ以外のバグっぽい挙動は多分全部仕様です。".replace(/	/g,""));
 			};
-
+*/
 
 		Label({
 			text: "Pollen Rebellion I",
@@ -880,7 +844,7 @@ phina.define("LoadingScene", {
 			.setPosition(this.gridX.center(), this.gridY.center())
 			.addChildTo(this)
 			.tweener
-			.wait(3000)
+			.wait(5000)
 			.to({
 				alpha: 0,
 			})
@@ -932,3 +896,5 @@ phina.main(function() {
 	});
 	app.run();
 });
+
+})();
