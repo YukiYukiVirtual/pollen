@@ -762,7 +762,7 @@ phina.define("ResultScene", {
 		shareButton.onclick = function() {
 			var url = phina.social.Twitter.createURL({
 				text: text + (phina.isMobile() ? "(モバイルから)" : ""),
-				hashtags: ["Pollen_Rebellion_I", "YukiYukiVirtual"],
+				hashtags: ["Pollen_Rebellion_I", "YukiYukiVirtual", "phina_js"],
 			});
 
 			window.open(url, "share window", "width=480, height=320");
